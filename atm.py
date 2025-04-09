@@ -26,7 +26,7 @@ class ATM:
                 account_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 account_type TEXT NOT NULL CHECK (account_type IN ('Checking', 'Savings', 'Credit')),
-                balance REAL DEFAULT 0,
+                balance_cents INTEGER DEFAULT 0,
                 FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
             )
         ''')
@@ -63,54 +63,31 @@ class ATM:
         
         self._account_id, self._user_id = result
 
-    def withdraw(self, amount: float) -> None:
+    def withdraw(self, dollars: str, cents: str) -> None:
         """Withdraws given amount from the cards account"""
-        if amount <= 0:  # Can't withdraw 0 or negative
-            raise ValueError("Invalid withdraw amount")
-
-        self._cursor.execute('''
-            SELECT account_type, balance FROM accounts WHERE
-            account_id = ? AND
-            user_id = ?
-        ''', (self._account_id, self._user_id,))  # Find the account type and balance
-        result = self._cursor.fetchone()
-        if not result:
-            raise ValueError("Balance not found")
-        
+        total_cents: int = self._to_cents(dollars, cents)  # Convert to cents
+        self._valid_amount(total_cents)  # Make sure given amount is valid
+        result: tuple[str, str] = self._balance_cents
         account_type: str = result[0]
-        balance: float = result[1]
-        if account_type != "Credit" and amount > balance:  # Only a credit account can have a negative balance
+        balance: int = int(result[1])
+        if account_type != "Credit" and total_cents > balance:  # Only a credit account can have a negative balance
             raise ValueError("Insufficient funds")
         
-        new_balance: float = balance - amount
-        self._cursor.execute('''
-            UPDATE accounts SET balance = ? WHERE
-            account_id = ? AND 
-            user_id = ?
-        ''', (new_balance, self._account_id, self._user_id))  # Update the account balance
-        self._sqlite_connection.commit()
-        print(f"Withdrawal successful! New balance: ${new_balance:.2f}")
+        self._balance_cents: int = balance - total_cents
+        print(f"Withdrawal successful! New balance: {self.balance_string}")
 
-    def deposit(self, amount: float) -> None:
+    def deposit(self, dollars: str, cents: str) -> None:
         """Deposits given amount into the cards account"""
-        if amount <= 0:  # Can't deposit 0 or negative
-            raise ValueError("Invalid deposit amount")
-        
-        balance: float = self.balance  # Get current card balance
-        new_balance: float = balance + amount
-        self._cursor.execute('''
-            UPDATE accounts SET balance = ? WHERE
-            account_id = ? AND 
-            user_id = ?
-        ''', (new_balance, self._account_id, self._user_id))  # Set new balance
-        self._sqlite_connection.commit()
-        print(f"Deposit successful! New balance: ${new_balance:.2f}")
+        total_cents: int = self._to_cents(dollars, cents)  # Convert to cents
+        self._valid_amount(total_cents)  # Make sure given amount is valid
+        balance: int = int(self._balance_cents[1])  # Get current card balance
+        self._balance_cents: int = balance + total_cents
+        print(f"Deposit successful! New balance: {self.balance_string}")
 
-    def transfer(self, amount: float) -> None:
+    def transfer(self, dollars: str, cents: str) -> None:
         """Transfers money from the current account to another account under the same user"""
-        if amount <= 0:  # Can't transfer 0 or negative
-            raise ValueError("Invalid transfer amount")
-
+        total_cents: int = self._to_cents(dollars, cents)  # Convert to cents
+        self._valid_amount(total_cents)  # Make sure given amount is valid
         choices: list[int] = []
         for account in self._accounts:  # Get all available accounts for the user
             print(f"Account: {account[0]}, Type: {account[1]}")
@@ -126,9 +103,9 @@ class ATM:
             except ValueError:
                 print("Please enter a valid account number.")
 
-        self.withdraw(amount)
+        self.withdraw(dollars, cents)  # Use withdraw to take the money out
         self._cursor.execute('''
-            SELECT balance FROM accounts WHERE 
+            SELECT balance_cents FROM accounts WHERE 
             account_id = ? AND
             user_id = ?
         ''', (choice, self._user_id,))  # Get recipients balance
@@ -136,15 +113,17 @@ class ATM:
         if not result:
             raise ValueError("Recipient account not found.")
 
-        recipient_balance = result[0]
-        new_recipient_balance = recipient_balance + amount
+        recipient_balance: int = result[0]
+        new_recipient_balance = recipient_balance + total_cents
         self._cursor.execute('''
-            UPDATE accounts SET balance = ? WHERE 
+            UPDATE accounts SET balance_cents = ? WHERE 
             account_id = ? AND 
             user_id = ?
         ''', (new_recipient_balance, choice, self._user_id))  # Set new balance
         self._sqlite_connection.commit()
-        print(f"Transfer successful! Recipient account balance: ${new_recipient_balance}")
+        r_dollars: int = new_recipient_balance // 100
+        r_cents: int = new_recipient_balance % 100
+        print(f"Transfer successful! Recipient account balance: ${r_dollars}.{r_cents:02}")
 
     def change_pin(self, pin: str) -> None:
         self._cursor.execute('''
@@ -215,21 +194,42 @@ class ATM:
             0: EXIT
         """)
 
+    @staticmethod
+    def _to_cents(dollars: str, cents: str) -> int:
+        if int(dollars) < 0:  # Ensure negative cents if negative dollars
+            return (int(dollars) * 100) - int(cents)
+        else:
+            return (int(dollars) * 100) + int(cents)
+
+    @staticmethod
+    def _valid_amount(amount: int) -> None:
+        if amount <= 0:  # Can't be 0 or negative
+            raise ValueError("Invalid amount")
+
     @property
-    def balance(self) -> float:
+    def _balance_cents(self) -> tuple[str, str]:
         self._cursor.execute('''
-            SELECT balance FROM accounts WHERE
+            SELECT account_type, balance_cents FROM accounts WHERE
             account_id = ? AND
             user_id = ?
-        ''', (self._account_id, self._user_id,))
+        ''', (self._account_id, self._user_id,))  # Find the account type and balance
         result = self._cursor.fetchone()
         if not result:
             raise ValueError("Balance not found")
         
-        return float(result[0])
+        return result
+    
+    @_balance_cents.setter
+    def _balance_cents(self, new_balance: int) -> None:
+        self._cursor.execute('''
+            UPDATE accounts SET balance_cents = ? WHERE
+            account_id = ? AND 
+            user_id = ?
+        ''', (new_balance, self._account_id, self._user_id))  # Update the account balance
+        self._sqlite_connection.commit()
 
     @property
-    def _accounts(self) -> list[tuple[int, str]]:
+    def _accounts(self) -> list[tuple[str, str]]:
         self._cursor.execute('''
             SELECT account_id, account_type FROM accounts WHERE 
             user_id = ?
@@ -240,3 +240,11 @@ class ATM:
             return []
         
         return result
+
+    @property
+    def balance_string(self) -> str:
+        total_cents: int = int(self._balance_cents[1])
+        dollars: int = total_cents // 100
+        cents: int = total_cents % 100
+
+        return f"${dollars}.{cents:02}"

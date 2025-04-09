@@ -25,7 +25,7 @@ def create_database(db_name: str):
             account_id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             account_type TEXT NOT NULL CHECK (account_type IN ('Checking', 'Savings', 'Credit')),
-            balance REAL DEFAULT 0,
+            balance_cents INTEGER DEFAULT 0,
             FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
         )
     ''')
@@ -58,7 +58,7 @@ def add_user(conn, name, email):
 
 def add_account(conn, user_id, account_type, balance):
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO accounts (user_id, account_type, balance) VALUES (?, ?, ?)", (user_id, account_type, balance))
+    cursor.execute("INSERT INTO accounts (user_id, account_type, balance_cents) VALUES (?, ?, ?)", (user_id, account_type, balance))
     conn.commit()
     return cursor.lastrowid  # Returns new account_id
 
@@ -81,13 +81,13 @@ def populate_database(db_name: str):
     user2_id = add_user(conn, "Bob", "bob@email.com")
     
     # Add accounts for Alice
-    acc1 = add_account(conn, user1_id, "Checking", 2000.00)
-    acc2 = add_account(conn, user1_id, "Savings", 5000.00)
+    acc1 = add_account(conn, user1_id, "Checking", 200000)  # $2000
+    acc2 = add_account(conn, user1_id, "Savings", 500000)  # $5000
     
     # Add accounts for Bob
-    acc3 = add_account(conn, user2_id, "Checking", 1500.00)
-    acc4 = add_account(conn, user2_id, "Savings", 3000.00)
-    acc5 = add_account(conn, user2_id, "Credit", -500.00)  # Credit account with negative balance
+    acc3 = add_account(conn, user2_id, "Checking", 150000)  # $1500
+    acc4 = add_account(conn, user2_id, "Savings", 300000)  # $3000
+    acc5 = add_account(conn, user2_id, "Credit", -50000)  # Credit account with negative balance $500
     
     # Add cards for Alice
     add_card(conn, acc1, "Visa", "Alice", "Debit", "3705113944732746", "487", "1234")

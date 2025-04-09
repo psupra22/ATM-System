@@ -1,4 +1,5 @@
 import pytest
+import re
 from unittest.mock import patch
 from atm import ATM
 
@@ -29,30 +30,37 @@ def test_check_card() -> None:
 def test_balance() -> None:
     atm: ATM = ATM("atm.db")
     atm.check_card("3705113944732746", "487", "12/28", "1234")
-    assert atm.balance == 2000.00
+    assert atm.balance_string == "$2000.00"
     atm.check_card("3461791776320947", "415", "12/28", "5678")
-    assert atm.balance == 5000.00
+    assert atm.balance_string == "$5000.00"
 
 
 def test_withdraw() -> None:
     atm: ATM = ATM("atm.db")
     atm.check_card("3705113944732746", "487", "12/28", "1234")
-    atm.withdraw(1000.00)
-    assert atm.balance == 1000.00
+    matches = re.search(r"^(?P<dollars>-?\d+)\.(?P<cents>\d{2})$", "1000.00")
+    atm.withdraw(matches.group("dollars"), matches.group("cents"))
+    assert atm.balance_string == "$1000.00"
     with pytest.raises(ValueError):
-        atm.withdraw(-5.00)
+        matches = re.search(r"^(?P<dollars>-?\d+)\.(?P<cents>\d{2})$", "-5.00")
+        atm.withdraw(matches.group("dollars"), matches.group("cents"))
     with pytest.raises(ValueError):
-        atm.withdraw(0.00)
+        matches = re.search(r"^(?P<dollars>-?\d+)\.(?P<cents>\d{2})$", "0.00")
+        atm.withdraw(matches.group("dollars"), matches.group("cents"))
     with pytest.raises(ValueError):
-        atm.withdraw(6000.00)
+        matches = re.search(r"^(?P<dollars>-?\d+)\.(?P<cents>\d{2})$", "6000.00")
+        atm.withdraw(matches.group("dollars"), matches.group("cents"))
 
 
 def test_deposit() -> None:
     atm: ATM = ATM("atm.db")
     atm.check_card("3705113944732746", "487", "12/28", "1234")
-    atm.deposit(1000.00)
-    assert atm.balance == 2000.00
+    matches = re.search(r"^(?P<dollars>-?\d+)\.(?P<cents>\d{2})$", "1000.00")
+    atm.deposit(matches.group("dollars"), matches.group("cents"))
+    assert atm.balance_string == "$2000.00"
     with pytest.raises(ValueError):
-        atm.deposit(-5.00)
+        matches = re.search(r"^(?P<dollars>-?\d+)\.(?P<cents>\d{2})$", "-5.00")
+        atm.deposit(matches.group("dollars"), matches.group("cents"))
     with pytest.raises(ValueError):
-        atm.deposit(0.00)
+        matches = re.search(r"^(?P<dollars>-?\d+)\.(?P<cents>\d{2})$", "0.00")
+        atm.deposit(matches.group("dollars"), matches.group("cents"))
